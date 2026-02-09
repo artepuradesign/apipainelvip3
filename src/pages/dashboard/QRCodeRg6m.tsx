@@ -379,6 +379,16 @@ const QRCodeRg6m = () => {
 
       // 2. Cobrar do saldo (registrar no histórico)
       try {
+        // Determinar tipo de saldo usado
+        let saldoUsado: 'plano' | 'carteira' | 'misto' = 'carteira';
+        if (planBalance >= finalPrice) {
+          saldoUsado = 'plano';
+        } else if (planBalance > 0 && (planBalance + walletBalance) >= finalPrice) {
+          saldoUsado = 'misto';
+        }
+
+        const moduleId = currentModule?.panel_id || currentModule?.id || 0;
+
         await consultationApiService.recordConsultation({
           document: formData.numeroDocumento,
           status: 'completed',
@@ -386,12 +396,27 @@ const QRCodeRg6m = () => {
           result_data: result.data,
           metadata: {
             page_route: location.pathname,
-            module_name: 'QR Code RG 6M',
-            token: result.data.token
+            module_name: currentModule?.title || 'QR Code RG 6M',
+            module_id: moduleId,
+            token: result.data.token,
+            saldo_usado: saldoUsado,
+            source: 'qrcode-rg-6m',
+            timestamp: new Date().toISOString()
           }
         });
 
-        // Atualizar saldo
+        // Deduzir saldo localmente para feedback imediato
+        if (saldoUsado === 'plano') {
+          setPlanBalance(prev => Math.max(0, prev - finalPrice));
+        } else if (saldoUsado === 'misto') {
+          const restante = finalPrice - planBalance;
+          setPlanBalance(0);
+          setWalletBalance(prev => Math.max(0, prev - restante));
+        } else {
+          setWalletBalance(prev => Math.max(0, prev - finalPrice));
+        }
+
+        // Atualizar saldo da API
         await reloadApiBalance();
       } catch (balanceError) {
         console.error('Erro ao registrar cobrança:', balanceError);
