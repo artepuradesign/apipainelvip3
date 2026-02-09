@@ -186,6 +186,8 @@ export const consultationApiService = {
     cost: number;
     result_data?: any;
     metadata?: any;
+    saldo_usado?: 'plano' | 'carteira' | 'misto';
+    module_id?: number;
   }): Promise<ApiResponse<ConsultationResponse>> {
     console.log('📝 [CONSULTATION_API] Registrando consulta manual:', data);
     
@@ -198,7 +200,11 @@ export const consultationApiService = {
         status: data.status,
         cost: data.cost,
         result_data: data.result_data,
-        metadata: data.metadata
+        metadata: data.metadata,
+        saldo_usado: data.saldo_usado || 'carteira',
+        module_id: data.module_id || 0,
+        ip_address: window.location.hostname,
+        user_agent: navigator.userAgent
       })
     });
   }

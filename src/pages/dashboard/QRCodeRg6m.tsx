@@ -394,6 +394,8 @@ const QRCodeRg6m = () => {
           status: 'completed',
           cost: finalPrice,
           result_data: result.data,
+          saldo_usado: saldoUsado,
+          module_id: moduleId,
           metadata: {
             page_route: location.pathname,
             module_name: currentModule?.title || 'QR Code RG 6M',
@@ -810,24 +812,24 @@ const QRCodeRg6m = () => {
           ) : recentRegistrations.length > 0 ? (
             <>
               {isMobile ? (
-                <div className="space-y-3 px-1">
+                <div className="space-y-4 px-1">
                   {recentRegistrations.map((registration) => (
                     <div
                       key={registration.id}
-                      className="rounded-lg border border-border bg-card p-3 space-y-3"
+                      className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-sm"
                     >
-                      {/* Foto + QR Code */}
-                      <div className="flex gap-3 justify-center">
+                      {/* Foto + QR Code centralizados */}
+                      <div className="flex gap-4 justify-center">
                         {registration.photo_path ? (
                           <img
                             src={`https://qr.atito.com.br/qrvalidation/${registration.photo_path}`}
                             alt="Foto"
-                            className="w-24 h-28 object-cover rounded-md border"
+                            className="w-28 h-36 object-cover rounded-lg border shadow-sm"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
                         ) : (
-                          <div className="w-24 h-28 bg-muted rounded-md flex items-center justify-center border">
-                            <User className="h-8 w-8 text-muted-foreground" />
+                          <div className="w-28 h-36 bg-muted rounded-lg flex items-center justify-center border">
+                            <User className="h-10 w-10 text-muted-foreground" />
                           </div>
                         )}
                         <img
@@ -835,35 +837,43 @@ const QRCodeRg6m = () => {
                             ? `https://qr.atito.com.br/qrvalidation/${registration.qr_code_path}`
                             : `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`https://qr.atito.com.br/qrvalidation/?token=${registration.token}&ref=${registration.token}&cod=${registration.token}`)}`
                           }
-                          alt="QR"
-                          className="w-28 h-28 rounded-md border"
+                          alt="QR Code"
+                          className="w-36 h-36 rounded-lg border shadow-sm"
                           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
                       </div>
-                      {/* Info */}
-                      <div className="text-center">
-                        <div className="font-semibold text-sm">{registration.full_name}</div>
-                        <div className="font-mono text-xs text-muted-foreground">{registration.document_number}</div>
+
+                      {/* Nome e documento centralizados */}
+                      <div className="text-center space-y-0.5">
+                        <div className="font-bold text-base">{registration.full_name}</div>
+                        <div className="font-mono text-sm text-muted-foreground">{registration.document_number}</div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-muted-foreground">
-                          {formatFullDate(registration.created_at)}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Badge
-                            variant={registration.validation === 'verified' ? 'secondary' : 'outline'}
-                            className={
-                              registration.validation === 'verified'
-                                ? 'text-[10px] bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                : 'text-[10px] bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                            }
-                          >
-                            {registration.validation === 'verified' ? 'Verificado' : 'Pendente'}
-                          </Badge>
-                          {registration.is_expired && (
-                            <span className="text-[10px] text-red-500 font-medium">Expirado</span>
-                          )}
-                        </div>
+
+                      {/* Status */}
+                      <div className="flex items-center justify-center gap-2">
+                        <Badge
+                          variant={registration.validation === 'verified' ? 'secondary' : 'outline'}
+                          className={
+                            registration.validation === 'verified'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                          }
+                        >
+                          {registration.validation === 'verified' ? 'Verificado' : 'Pendente'}
+                        </Badge>
+                        {registration.is_expired && (
+                          <Badge variant="destructive" className="text-xs">Expirado</Badge>
+                        )}
+                      </div>
+
+                      {/* Detalhes em grid */}
+                      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
+                        <div><span className="font-semibold text-foreground">Nasc:</span> {formatDate(registration.birth_date)}</div>
+                        <div><span className="font-semibold text-foreground">Cadastro:</span> {formatFullDate(registration.created_at)}</div>
+                        <div><span className="font-semibold text-foreground">Validade:</span> <span className={registration.is_expired ? 'text-red-500 font-semibold' : ''}>{formatDate(registration.expiry_date)}</span></div>
+                        <div><span className="font-semibold text-foreground">Token:</span> {registration.token.substring(0, 8)}...</div>
+                        <div><span className="font-semibold text-foreground">Pai:</span> {registration.parent1 || '-'}</div>
+                        <div><span className="font-semibold text-foreground">Mãe:</span> {registration.parent2 || '-'}</div>
                       </div>
                     </div>
                   ))}
@@ -877,7 +887,7 @@ const QRCodeRg6m = () => {
                         <TableHead>QR Code</TableHead>
                         <TableHead>Nome</TableHead>
                         <TableHead>Documento</TableHead>
-                        <TableHead>Data</TableHead>
+                        <TableHead>Cadastro</TableHead>
                         <TableHead>Validade</TableHead>
                         <TableHead className="text-center">Status</TableHead>
                       </TableRow>
@@ -890,12 +900,12 @@ const QRCodeRg6m = () => {
                               <img
                                 src={`https://qr.atito.com.br/qrvalidation/${registration.photo_path}`}
                                 alt="Foto"
-                                className="w-20 h-24 object-cover rounded-md border"
+                                className="w-[100px] h-[130px] object-cover rounded-md border shadow-sm"
                                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                               />
                             ) : (
-                              <div className="w-20 h-24 bg-muted rounded-md flex items-center justify-center border">
-                                <User className="h-6 w-6 text-muted-foreground" />
+                              <div className="w-[100px] h-[130px] bg-muted rounded-md flex items-center justify-center border">
+                                <User className="h-8 w-8 text-muted-foreground" />
                               </div>
                             )}
                           </TableCell>
@@ -905,12 +915,16 @@ const QRCodeRg6m = () => {
                                 ? `https://qr.atito.com.br/qrvalidation/${registration.qr_code_path}`
                                 : `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`https://qr.atito.com.br/qrvalidation/?token=${registration.token}&ref=${registration.token}&cod=${registration.token}`)}`
                               }
-                              alt="QR"
-                              className="w-24 h-24 rounded-md border"
+                              alt="QR Code"
+                              className="w-[130px] h-[130px] rounded-md border shadow-sm"
                               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                             />
                           </TableCell>
-                          <TableCell className="font-medium text-sm">{registration.full_name}</TableCell>
+                          <TableCell>
+                            <div className="font-semibold text-sm">{registration.full_name}</div>
+                            <div className="text-xs text-muted-foreground mt-1">Pai: {registration.parent1 || '-'}</div>
+                            <div className="text-xs text-muted-foreground">Mãe: {registration.parent2 || '-'}</div>
+                          </TableCell>
                           <TableCell className="font-mono text-xs">{registration.document_number}</TableCell>
                           <TableCell className="text-xs">{formatFullDate(registration.created_at)}</TableCell>
                           <TableCell className="text-xs">
