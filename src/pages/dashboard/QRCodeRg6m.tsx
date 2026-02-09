@@ -16,6 +16,7 @@ import { useApiModules } from '@/hooks/useApiModules';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { getModulePrice } from '@/utils/modulePrice';
 import { consultationApiService } from '@/services/consultationApiService';
+import { walletApiService } from '@/services/walletApiService';
 import SimpleTitleBar from '@/components/dashboard/SimpleTitleBar';
 import LoadingScreen from '@/components/layout/LoadingScreen';
 import ScrollToTop from '@/components/ui/scroll-to-top';
@@ -160,7 +161,8 @@ const QRCodeRg6m = () => {
     try {
       setRecentLoading(true);
       
-      const response = await fetch(`${PHP_API_BASE}/list_users.php?limit=10&offset=0`);
+      const userId = user?.id || '';
+      const response = await fetch(`${PHP_API_BASE}/list_users.php?limit=10&offset=0&id_user=${encodeURIComponent(userId)}`);
       const data = await response.json();
       
       if (data.success && Array.isArray(data.data)) {
@@ -196,7 +198,7 @@ const QRCodeRg6m = () => {
       setRecentLoading(false);
       setStatsLoading(false);
     }
-  }, []);
+  }, [user]);
 
   // Atualizar saldos quando o saldo da API mudar
   useEffect(() => {
@@ -237,6 +239,14 @@ const QRCodeRg6m = () => {
   }, [user, modulePriceLoading, modulePrice, subscriptionLoading]);
 
   const handleInputChange = (field: keyof FormData, value: string) => {
+    // CPF field: numbers only
+    if (field === 'numeroDocumento') {
+      value = value.replace(/\D/g, '');
+    }
+    // Text fields: force uppercase
+    if (field === 'nome' || field === 'pai' || field === 'mae') {
+      value = value.toUpperCase();
+    }
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -377,18 +387,36 @@ const QRCodeRg6m = () => {
         throw new Error(result.error || 'Erro ao cadastrar');
       }
 
-      // 2. Cobrar do saldo (registrar no histórico)
+      // 2. Cobrar do saldo via API de carteira
       try {
         // Determinar tipo de saldo usado
         let saldoUsado: 'plano' | 'carteira' | 'misto' = 'carteira';
+        let walletType: 'main' | 'plan' = 'main';
+        
         if (planBalance >= finalPrice) {
           saldoUsado = 'plano';
+          walletType = 'plan';
         } else if (planBalance > 0 && (planBalance + walletBalance) >= finalPrice) {
           saldoUsado = 'misto';
         }
 
         const moduleId = currentModule?.panel_id || currentModule?.id || 0;
 
+        // Deduzir saldo via wallet API (valor negativo para debitar)
+        if (saldoUsado === 'misto') {
+          // Debitar do plano primeiro, depois da carteira
+          if (planBalance > 0) {
+            await walletApiService.addBalance(0, -planBalance, `Cadastro QR Code RG - ${formData.nome}`, 'consulta', undefined, 'plan');
+          }
+          const restante = finalPrice - planBalance;
+          if (restante > 0) {
+            await walletApiService.addBalance(0, -restante, `Cadastro QR Code RG - ${formData.nome}`, 'consulta', undefined, 'main');
+          }
+        } else {
+          await walletApiService.addBalance(0, -finalPrice, `Cadastro QR Code RG - ${formData.nome}`, 'consulta', undefined, walletType);
+        }
+
+        // Registrar no histórico de consultas
         await consultationApiService.recordConsultation({
           document: formData.numeroDocumento,
           status: 'completed',
@@ -422,6 +450,7 @@ const QRCodeRg6m = () => {
         await reloadApiBalance();
       } catch (balanceError) {
         console.error('Erro ao registrar cobrança:', balanceError);
+        toast.error('Cadastro realizado, mas houve erro ao cobrar o saldo. Contate o suporte.');
       }
 
       // 3. Limpar formulário e fechar modal
@@ -578,7 +607,10 @@ const QRCodeRg6m = () => {
                   <Input
                     id="numeroDocumento"
                     type="text"
-                    placeholder="Digite o CPF"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={11}
+                    placeholder="Digite o CPF (somente números)"
                     value={formData.numeroDocumento}
                     onChange={(e) => handleInputChange('numeroDocumento', e.target.value)}
                     required
@@ -677,7 +709,7 @@ const QRCodeRg6m = () => {
 
       {/* Modal de Confirmação */}
       <Dialog open={showConfirmModal} onOpenChange={setShowConfirmModal}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-500" />
@@ -688,20 +720,20 @@ const QRCodeRg6m = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4 py-4">
+          <div className="space-y-3 py-2">
             {/* Preview da foto */}
             {previewUrl && (
               <div className="flex justify-center">
                 <img
                   src={previewUrl}
                   alt="Foto"
-                  className="w-24 h-32 object-cover rounded-lg border-2 border-purple-200 shadow-md"
+                  className="w-20 h-26 object-cover rounded-lg border-2 border-purple-200 shadow-md"
                 />
               </div>
             )}
             
             {/* Dados do cadastro */}
-            <div className="space-y-3 bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+            <div className="space-y-2 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm">
               <div className="flex items-start gap-3">
                 <User className="h-4 w-4 text-muted-foreground mt-0.5" />
                 <div>
@@ -812,68 +844,62 @@ const QRCodeRg6m = () => {
           ) : recentRegistrations.length > 0 ? (
             <>
               {isMobile ? (
-                <div className="space-y-4 px-1">
+                <div className="space-y-3 px-1">
                   {recentRegistrations.map((registration) => (
                     <div
                       key={registration.id}
-                      className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-sm"
+                      className="rounded-xl border border-border bg-card p-3 space-y-2 shadow-sm"
                     >
-                      {/* Foto + QR Code centralizados */}
-                      <div className="flex gap-4 justify-center">
+                      {/* Header: Foto + Nome + Status + Arrow */}
+                      <div className="flex items-center gap-3">
                         {registration.photo_path ? (
                           <img
                             src={`https://qr.atito.com.br/qrvalidation/${registration.photo_path}`}
                             alt="Foto"
-                            className="w-28 h-36 object-cover rounded-lg border shadow-sm"
+                            className="w-14 h-18 object-cover rounded-lg border flex-shrink-0"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
                         ) : (
-                          <div className="w-28 h-36 bg-muted rounded-lg flex items-center justify-center border">
-                            <User className="h-10 w-10 text-muted-foreground" />
+                          <div className="w-14 h-18 bg-muted rounded-lg flex items-center justify-center border flex-shrink-0">
+                            <User className="h-6 w-6 text-muted-foreground" />
                           </div>
                         )}
-                        <img
-                          src={registration.qr_code_path
-                            ? `https://qr.atito.com.br/qrvalidation/${registration.qr_code_path}`
-                            : `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`https://qr.atito.com.br/qrvalidation/?token=${registration.token}&ref=${registration.token}&cod=${registration.token}`)}`
-                          }
-                          alt="QR Code"
-                          className="w-36 h-36 rounded-lg border shadow-sm"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        />
-                      </div>
-
-                      {/* Nome e documento centralizados */}
-                      <div className="text-center space-y-0.5">
-                        <div className="font-bold text-base">{registration.full_name}</div>
-                        <div className="font-mono text-sm text-muted-foreground">{registration.document_number}</div>
-                      </div>
-
-                      {/* Status */}
-                      <div className="flex items-center justify-center gap-2">
-                        <Badge
-                          variant={registration.validation === 'verified' ? 'secondary' : 'outline'}
-                          className={
-                            registration.validation === 'verified'
-                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                              : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                          }
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-sm truncate">{registration.full_name}</div>
+                          <div className="font-mono text-xs text-muted-foreground">{registration.document_number}</div>
+                          <div className="mt-1">
+                            <Badge
+                              variant={registration.validation === 'verified' ? 'secondary' : 'outline'}
+                              className={`text-[10px] ${
+                                registration.validation === 'verified'
+                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                  : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                              }`}
+                            >
+                              {registration.validation === 'verified' ? 'Verificado' : 'Pendente'}
+                            </Badge>
+                            {registration.is_expired && (
+                              <Badge variant="destructive" className="text-[10px] ml-1">Expirado</Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="flex-shrink-0 h-8 w-8"
+                          onClick={() => window.open(`https://qr.atito.com.br/qrvalidation/?token=${registration.token}&ref=${registration.token}&cod=${registration.token}`, '_blank')}
                         >
-                          {registration.validation === 'verified' ? 'Verificado' : 'Pendente'}
-                        </Badge>
-                        {registration.is_expired && (
-                          <Badge variant="destructive" className="text-xs">Expirado</Badge>
-                        )}
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                        </Button>
                       </div>
 
-                      {/* Detalhes em grid */}
-                      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
-                        <div><span className="font-semibold text-foreground">Nasc:</span> {formatDate(registration.birth_date)}</div>
-                        <div><span className="font-semibold text-foreground">Cadastro:</span> {formatFullDate(registration.created_at)}</div>
-                        <div><span className="font-semibold text-foreground">Validade:</span> <span className={registration.is_expired ? 'text-red-500 font-semibold' : ''}>{formatDate(registration.expiry_date)}</span></div>
-                        <div><span className="font-semibold text-foreground">Token:</span> {registration.token.substring(0, 8)}...</div>
-                        <div><span className="font-semibold text-foreground">Pai:</span> {registration.parent1 || '-'}</div>
-                        <div><span className="font-semibold text-foreground">Mãe:</span> {registration.parent2 || '-'}</div>
+                      {/* Detalhes linha por linha */}
+                      <div className="space-y-1 text-sm bg-muted/30 rounded-lg p-2.5">
+                        <div className="flex justify-between"><span className="text-muted-foreground">Nascimento:</span> <span className="font-medium">{formatDate(registration.birth_date)}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Cadastro:</span> <span className="font-medium">{formatFullDate(registration.created_at)}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Validade:</span> <span className={`font-medium ${registration.is_expired ? 'text-red-500' : ''}`}>{formatDate(registration.expiry_date)}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Pai:</span> <span className="font-medium">{registration.parent1 || '-'}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Mãe:</span> <span className="font-medium">{registration.parent2 || '-'}</span></div>
                       </div>
                     </div>
                   ))}
