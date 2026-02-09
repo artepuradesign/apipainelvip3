@@ -22,7 +22,7 @@ import ScrollToTop from '@/components/ui/scroll-to-top';
 
 // URL base do backend PHP
 const PHP_API_BASE = 'https://qr.atito.com.br/qrcode';
-const PHP_VALIDATION_BASE = 'https://qr.atito.com.br/qrvalidation/qrvalidation';
+const PHP_VALIDATION_BASE = 'https://qr.atito.com.br/qrvalidation';
 
 interface FormData {
   nome: string;
@@ -314,6 +314,12 @@ const QRCodeRg6m = () => {
       if (user?.id) {
         formDataToSend.append('id_user', user.id);
       }
+
+      // Data de validade = 6 meses a partir de hoje
+      const expiryDate = new Date();
+      expiryDate.setMonth(expiryDate.getMonth() + 6);
+      const formattedExpiry = expiryDate.toISOString().split('T')[0]; // YYYY-MM-DD
+      formDataToSend.append('expiry_date', formattedExpiry);
       
       if (formData.foto) {
         formDataToSend.append('photo', formData.foto);
