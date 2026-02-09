@@ -319,33 +319,51 @@ const QRCodeRg6m = () => {
         formDataToSend.append('photo', formData.foto);
       }
 
-      const response = await fetch(`${PHP_VALIDATION_BASE}/register.php`, {
-        method: 'POST',
-        body: formDataToSend,
-        redirect: 'manual' // Não seguir redirects automaticamente
-      });
+      console.log('📤 Enviando cadastro para:', `${PHP_VALIDATION_BASE}/register.php`);
+
+      let response: Response;
+      try {
+        response = await fetch(`${PHP_VALIDATION_BASE}/register.php`, {
+          method: 'POST',
+          body: formDataToSend,
+          redirect: 'manual'
+        });
+      } catch (networkError) {
+        console.error('❌ Erro de rede (CORS ou servidor indisponível):', networkError);
+        throw new Error('Erro de conexão com o servidor. Verifique se o servidor está online e com CORS habilitado.');
+      }
+
+      console.log('📊 Response type:', response.type, 'status:', response.status);
 
       // O register.php pode retornar JSON ou fazer redirect (302)
-      // Se for redirect (opaque-redirect com status 0), o cadastro foi bem-sucedido
       let result: any = { success: false };
       
       if (response.type === 'opaqueredirect' || response.status === 0 || response.status === 302) {
-        // Redirect = cadastro foi feito com sucesso no servidor
         result = { success: true, data: { token: '', document_number: formData.numeroDocumento } };
       } else if (response.ok) {
-        try {
-          result = await response.json();
-        } catch {
-          // Se não conseguiu parsear JSON mas status é OK, considerar sucesso
+        const text = await response.text();
+        console.log('📄 Response body preview:', text.substring(0, 200));
+        
+        if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
+          try {
+            result = JSON.parse(text);
+          } catch {
+            result = { success: true, data: { token: '', document_number: formData.numeroDocumento } };
+          }
+        } else {
+          // Resposta não-JSON mas OK = provavelmente sucesso (HTML redirect etc)
           result = { success: true, data: { token: '', document_number: formData.numeroDocumento } };
         }
       } else {
+        const errorText = await response.text().catch(() => '');
+        console.error('❌ Erro HTTP:', response.status, errorText.substring(0, 300));
+        
         try {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Erro ao cadastrar');
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || `Erro ${response.status} ao cadastrar`);
         } catch (e: any) {
-          if (e.message && e.message !== 'Unexpected end of JSON input') throw e;
-          throw new Error('Erro ao cadastrar');
+          if (e.message?.includes('Erro')) throw e;
+          throw new Error(`Erro ${response.status} ao cadastrar`);
         }
       }
 
